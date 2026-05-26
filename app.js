@@ -141,8 +141,19 @@ async function populate(){
   const varBody = qs('#variable-table tbody')
   fixedBody.innerHTML=''
   varBody.innerHTML=''
-  (data.fixed||[]).forEach(f=>fixedBody.appendChild(makeFixedRow(f.get('name') || f['name'], f.get('amount') || f['amount'], f.get('freq') || f['freq'])))
-  (data.variable||[]).forEach(v=>varBody.appendChild(makeVariableRow(v.get('name') || v['name'], v.get('min_amount') || v['min_amount'] || v['min'] || '', v.get('max_amount') || v['max_amount'] || v['max'] || '', v.get('freq') || v['freq'])))
+  (data.fixed||[]).forEach(f=>{
+    const name = f.name || f['name'] || ''
+    const amount = (f.amount !== undefined && f.amount !== null) ? f.amount : ''
+    const freq = f.freq || f['freq'] || 'monthly'
+    fixedBody.appendChild(makeFixedRow(name, amount, freq))
+  })
+  (data.variable||[]).forEach(v=>{
+    const name = v.name || v['name'] || ''
+    const min = (v.min_amount !== undefined && v.min_amount !== null) ? v.min_amount : ((v.min !== undefined && v.min !== null) ? v.min : '')
+    const max = (v.max_amount !== undefined && v.max_amount !== null) ? v.max_amount : ((v.max !== undefined && v.max !== null) ? v.max : '')
+    const freq = v.freq || v['freq'] || 'monthly'
+    varBody.appendChild(makeVariableRow(name, min, max, freq))
+  })
 }
 
 function readTable(tbody, type='fixed'){
