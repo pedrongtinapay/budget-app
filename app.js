@@ -60,13 +60,21 @@ async function loadData(){
 
 async function saveDataToServer(data){
   try{
-    await fetch(API_DATA, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)})
-  }catch(e){console.warn('Save failed',e)}
+    const res = await fetch(API_DATA, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)})
+    if(!res.ok) throw new Error('Save failed')
+    const saved = await res.json()
+    return saved
+  }catch(e){console.warn('Save failed',e); throw e}
 }
 
 async function populate(){
   const data = await loadData()
-  qs('#income-input').value = data.income || ''
+  // Ensure input shows persisted income with two decimals when present
+  if (data.income !== undefined && data.income !== null) {
+    qs('#income-input').value = Number(data.income).toFixed(2)
+  } else {
+    qs('#income-input').value = ''
+  }
   const fixedBody = qs('#fixed-table tbody')
   const varBody = qs('#variable-table tbody')
   fixedBody.innerHTML=''

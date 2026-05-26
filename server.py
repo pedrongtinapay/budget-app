@@ -16,7 +16,8 @@ def api_get_data():
 def api_save_data():
     payload = request.get_json() or {}
     save_data(payload)
-    return jsonify({'ok': True})
+    # return the saved data so client can confirm what was persisted
+    return jsonify(get_data())
 
 @app.route('/api/calculate', methods=['GET'])
 def api_calculate():
