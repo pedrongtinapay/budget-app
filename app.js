@@ -98,12 +98,33 @@ async function loadData(){
 }
 
 async function saveDataToServer(data){
+  // Only send keys that differ from server to avoid overwriting identical stored values.
   try{
-    const res = await fetch(API_DATA, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)})
+    const server = await loadData()
+    const payload = {}
+    // income: send only if provided (not null) and different beyond 0.01
+    if(data.income !== null && data.income !== undefined){
+      const sIncome = typeof server.income === 'number' ? server.income : parseFloat(server.income || 0)
+      if(Math.abs((data.income || 0) - (sIncome || 0)) > 0.005){ payload.income = data.income }
+    }
+    // normalize and compare fixed
+    const normFixed = (data.fixed||[]).map(f=>({name:String(f.name||'').trim(), amount: Number(f.amount||0), freq: String(f.freq||'weekly')}))
+    const srvFixed = (server.fixed||[]).map(f=>({name:String(f.name||'').trim(), amount: Number(f.amount||0), freq: String(f.freq||'weekly')}))
+    if(JSON.stringify(normFixed) !== JSON.stringify(srvFixed)) payload.fixed = normFixed
+
+    // normalize and compare variable (min/max)
+    const normVar = (data.variable||[]).map(v=>({name:String(v.name||'').trim(), min: v.min==null?null: Number(v.min), max: v.max==null?null:Number(v.max), amount: v.amount==null?null:Number(v.amount), freq: String(v.freq||'weekly')}))
+    const srvVar = (server.variable||[]).map(v=>({name:String(v.name||'').trim(), min: v.min_amount==null?null: Number(v.min_amount), max: v.max_amount==null?null:Number(v.max_amount), amount: v.amount==null?null:Number(v.amount), freq: String(v.freq||'weekly')}))
+    if(JSON.stringify(normVar) !== JSON.stringify(srvVar)) payload.variable = normVar
+
+    // if nothing changed, return server snapshot without POST
+    if(Object.keys(payload).length === 0){
+      return server
+    }
+
+    const res = await fetch(API_DATA, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)})
     if(!res.ok) throw new Error('Save failed')
     const saved = await res.json()
-    // Do NOT repopulate UI here to avoid interrupting user input.
-    // Return saved snapshot; callers should update only the overview (renderOverview) if desired.
     return saved
   }catch(e){console.warn('Save failed',e); throw e}
 }
