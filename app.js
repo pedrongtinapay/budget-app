@@ -33,7 +33,7 @@ function makeFixedRow(name='', amount='', freq='monthly'){
     clearTimeout(saveTimer)
     saveTimer = setTimeout(async ()=>{
       try{ await saveDataToServer(snapshotFromUI()); const r = await fetch(API_CALC); if(r.ok) renderOverview(await r.json()) }catch(e){console.warn('Debounced save failed',e)}
-    }, 600)
+    }, 1200)
   }
 
   // Attach autosave on input changes
@@ -73,7 +73,7 @@ function makeVariableRow(name='', min='', max='', freq='monthly'){
     clearTimeout(saveTimer)
     saveTimer = setTimeout(async ()=>{
       try{ await saveDataToServer(snapshotFromUI()); const r = await fetch(API_CALC); if(r.ok) renderOverview(await r.json()) }catch(e){console.warn('Debounced save failed',e)}
-    }, 600)
+    }, 1200)
   }
 
   // Attach autosave on input changes
@@ -102,6 +102,8 @@ async function saveDataToServer(data){
     const res = await fetch(API_DATA, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)})
     if(!res.ok) throw new Error('Save failed')
     const saved = await res.json()
+    // Do NOT repopulate UI here to avoid interrupting user input.
+    // Return saved snapshot; callers should update only the overview (renderOverview) if desired.
     return saved
   }catch(e){console.warn('Save failed',e); throw e}
 }
@@ -310,7 +312,7 @@ window.addEventListener('DOMContentLoaded',()=>{
   let incomeTimer = null
   qs('#income-input').addEventListener('input', ()=>{
     clearTimeout(incomeTimer)
-    incomeTimer = setTimeout(async ()=>{ try{ await saveDataToServer(snapshotFromUI()); const r = await fetch(API_CALC); if(r.ok) renderOverview(await r.json()) }catch(e){console.warn('Income save failed',e)} }, 700)
+    incomeTimer = setTimeout(async ()=>{ try{ await saveDataToServer(snapshotFromUI()); const r = await fetch(API_CALC); if(r.ok) renderOverview(await r.json()) }catch(e){console.warn('Income save failed',e)} }, 1500)
   })
   qs('#export-csv').addEventListener('click',exportCSV)
   qs('#clear').addEventListener('click',async ()=>{if(confirm('Clear all saved data?')){await saveDataToServer({income:0,fixed:[],variable:[]});await populate();qs('#weekly-income').textContent='₱0.00';qs('#monthly-income').textContent='Monthly: ₱0.00';qs('#expense-totals').textContent='Fixed: ₱0.00 · Variable: ₱0.00 · Total: ₱0.00';const tbody=qs('#alloc-table tbody');tbody.innerHTML=''; if(expenseChart){expenseChart.destroy(); expenseChart=null}}})

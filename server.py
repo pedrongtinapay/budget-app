@@ -15,9 +15,22 @@ def api_get_data():
 @app.route('/api/data', methods=['POST'])
 def api_save_data():
     payload = request.get_json() or {}
+    app.logger.info('POST /api/data payload: %s', payload)
     save_data(payload)
+    saved = get_data()
+    app.logger.info('Saved data snapshot: %s', saved)
     # return the saved data so client can confirm what was persisted
-    return jsonify(get_data())
+    return jsonify(saved)
+
+@app.route('/api/debug', methods=['GET'])
+def api_debug():
+    # return db file information to help debug persistence
+    from pathlib import Path
+    p = Path(__file__).parent / 'budget.db'
+    info = { 'db_path': str(p), 'exists': p.exists() }
+    if p.exists():
+        info.update({ 'size': p.stat().st_size, 'modified': p.stat().st_mtime })
+    return jsonify(info)
 
 @app.route('/api/calculate', methods=['GET'])
 def api_calculate():
