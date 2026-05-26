@@ -33,13 +33,21 @@ def get_data():
     return {'income': income, 'fixed': fixed, 'variable': variable}
 
 def save_data(data):
-    income = data.get('income', 0)
+    # Only update income if provided (not None). This avoids accidental overwrites when clients send null/omitted income.
+    income_provided = 'income' in data and data.get('income') is not None and data.get('income') != ''
     fixed = data.get('fixed', []) or []
     variable = data.get('variable', []) or []
     conn = _get_conn()
     c = conn.cursor()
     with _lock:
-        c.execute("INSERT OR REPLACE INTO meta (k,v) VALUES (?,?)", ('income', str(income)))
+        if income_provided:
+            # coerce to float when possible
+            try:
+                income_val = float(data.get('income'))
+            except Exception:
+                income_val = 0.0
+            c.execute("INSERT OR REPLACE INTO meta (k,v) VALUES (?,?)", ('income', str(income_val)))
+        # replace items fully
         c.execute("DELETE FROM items WHERE type = ?", ('fixed',))
         c.execute("DELETE FROM items WHERE type = ?", ('variable',))
         for f in fixed:

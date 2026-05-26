@@ -23,8 +23,30 @@ function makeRow(name='', amount='', freq='monthly'){
     </td>
     <td><button class="remove">Remove</button></td>
   `
-  tr.querySelector('.freq').value = freq
-  tr.querySelector('.remove').addEventListener('click',()=>tr.remove())
+  const freqEl = tr.querySelector('.freq')
+  freqEl.value = freq
+  const removeBtn = tr.querySelector('.remove')
+
+  // Debounced save helper
+  let saveTimer = null
+  const debouncedSave = () => {
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(async ()=>{
+      try{ await saveDataToServer(snapshotFromUI()); const r = await fetch(API_CALC); if(r.ok) renderOverview(await r.json()) }catch(e){console.warn('Debounced save failed',e)}
+    }, 600)
+  }
+
+  // Attach autosave on input changes
+  const nameInput = tr.querySelector('.name')
+  const amountInput = tr.querySelector('.amount')
+  nameInput.addEventListener('input', debouncedSave)
+  amountInput.addEventListener('input', debouncedSave)
+  freqEl.addEventListener('change', debouncedSave)
+
+  removeBtn.addEventListener('click', async ()=>{
+    tr.remove()
+    try{ await saveDataToServer(snapshotFromUI()); const r = await fetch(API_CALC); if(r.ok) renderOverview(await r.json()) }catch(e){console.warn('Remove save failed',e)}
+  })
   return tr
 }
 
@@ -99,25 +121,111 @@ async function exportCSV(){
 }
 
 function snapshotFromUI(){
+  const incomeRaw = qs('#income-input').value
+  const income = (incomeRaw === '' || incomeRaw === null) ? null : (parseFloat(incomeRaw) || 0)
   return {
-    income: parseFloat(qs('#income-input').value)||0,
+    income: income,
     fixed: readTable(qs('#fixed-table tbody')),
     variable: readTable(qs('#variable-table tbody'))
   }
 }
 
+let expenseChart = null
+
+function formatPeso(n){
+  const x = Number(n) || 0
+  return '₱' + x.toFixed(2)
+}
+
+function renderOverview(calc){
+  // calc from server: incomeWeekly, fixedWeekly, variableWeekly, total, leftover
+  qs('#weekly-income').textContent = formatPeso(calc.incomeWeekly)
+  // monthly income should be biweekly * 2
+  const biweekly = parseFloat(qs('#income-input').value) || (calc.incomeWeekly * 2)
+  const monthly = biweekly * 2
+  qs('#monthly-income').textContent = 'Monthly: ' + formatPeso(monthly)
+  qs('#expense-totals').textContent = `Fixed: ${formatPeso(calc.fixedWeekly)} · Variable: ${formatPeso(calc.variableWeekly)} · Total: ${formatPeso(calc.total)}`
+
+  // Pie chart: fixed vs variable
+  const ctx = document.getElementById('expenseChart')
+  const data = {
+    labels: ['Fixed','Variable'],
+    datasets:[{data:[calc.fixedWeekly, calc.variableWeekly],backgroundColor:['#2b7cff','#7fc3ff']}]
+  }
+  if(expenseChart) expenseChart.destroy()
+  expenseChart = new Chart(ctx, {type:'pie',data,options:{plugins:{legend:{position:'bottom'}}}})
+
+  // Allocation: include fixed and variable, rest of weekly income is distributed
+  const tbody = qs('#alloc-table tbody')
+  tbody.innerHTML = ''
+
+  // Add fixed and variable rows first
+  const trFixed = document.createElement('tr')
+  trFixed.innerHTML = `<td>Fixed</td><td class="currency">${formatPeso(calc.fixedWeekly)}</td><td>${formatPeso(calc.fixedWeekly * (52/12))}</td><td>${((calc.fixedWeekly / Math.max(calc.incomeWeekly,1)) * 100).toFixed(0)}%</td>`
+  tbody.appendChild(trFixed)
+  const trVar = document.createElement('tr')
+  trVar.innerHTML = `<td>Variable</td><td class="currency">${formatPeso(calc.variableWeekly)}</td><td>${formatPeso(calc.variableWeekly * (52/12))}</td><td>${((calc.variableWeekly / Math.max(calc.incomeWeekly,1)) * 100).toFixed(0)}%</td>`
+  tbody.appendChild(trVar)
+
+  const leftover = calc.leftover
+  if(leftover <= 0){
+    const tr = document.createElement('tr')
+    tr.innerHTML = `<td>Deficit (no allocation)</td><td class="currency">${formatPeso(leftover)}</td><td>${formatPeso(leftover * (52/12))}</td><td>—</td>`
+    tbody.appendChild(tr)
+    return
+  }
+
+  // Recommended allocation percentages of leftover (applied to leftover only)
+  const allocs = [
+    {k:'Savings',p:0.30},
+    {k:'Emergency Fund',p:0.10},
+    {k:'Debt Repayment',p:0.15},
+    {k:'Investments',p:0.10},
+    {k:'Discretionary',p:0.35}
+  ]
+  allocs.forEach(a=>{
+    const weekly = leftover * a.p
+    const monthly = weekly * (52/12)
+    const tr = document.createElement('tr')
+    tr.innerHTML = `<td>${a.k}</td><td class="currency">${formatPeso(weekly)}</td><td>${formatPeso(monthly)}</td><td>${Math.round(a.p*100)}% of leftover</td>`
+    tbody.appendChild(tr)
+  })
+}
+
 // init
 window.addEventListener('DOMContentLoaded',()=>{
-  populate()
-  qs('#add-fixed').addEventListener('click',()=>qs('#fixed-table tbody').appendChild(makeRow()))
-  qs('#add-variable').addEventListener('click',()=>qs('#variable-table tbody').appendChild(makeRow()))
-  qs('#save-income').addEventListener('click', async ()=>{
-    const s = snapshotFromUI(); await saveDataToServer(s); alert('Saved')
+  (async ()=>{
+    await populate()
+    // after load, fetch calculate and render overview
+    try{
+      const res = await fetch(API_CALC)
+      if(res.ok){
+        const calc = await res.json()
+        renderOverview(calc)
+      }
+    }catch(e){console.warn('Calc failed',e)}
+  })()
+
+  qs('#add-fixed').addEventListener('click', async ()=>{
+    const tbody = qs('#fixed-table tbody');
+    const newRow = makeRow();
+    tbody.appendChild(newRow);
+    const nameInput = newRow.querySelector('.name'); if(nameInput) nameInput.focus();
+    await saveDataToServer(snapshotFromUI());
+    const r = await fetch(API_CALC); if(r.ok) renderOverview(await r.json())
   })
-  qs('#calculate').addEventListener('click', async ()=>{
-    calculate()
-    await saveDataToServer(snapshotFromUI())
+  qs('#add-variable').addEventListener('click', async ()=>{
+    const tbody = qs('#variable-table tbody');
+    const newRow = makeRow();
+    tbody.appendChild(newRow);
+    const nameInput = newRow.querySelector('.name'); if(nameInput) nameInput.focus();
+    await saveDataToServer(snapshotFromUI());
+    const r = await fetch(API_CALC); if(r.ok) renderOverview(await r.json())
+  })
+  qs('#save-income').addEventListener('click', async ()=>{
+    const s = snapshotFromUI(); await saveDataToServer(s); alert('Saved');
+    const r = await fetch(API_CALC); if(r.ok) renderOverview(await r.json())
   })
   qs('#export-csv').addEventListener('click',exportCSV)
-  qs('#clear').addEventListener('click',()=>{if(confirm('Clear all saved data?')){localStorage.removeItem(STORAGE_KEY);populate();qs('#results').textContent='';}})
+  qs('#clear').addEventListener('click',async ()=>{if(confirm('Clear all saved data?')){await saveDataToServer({income:0,fixed:[],variable:[]});await populate();qs('#weekly-income').textContent='₱0.00';qs('#monthly-income').textContent='Monthly: ₱0.00';qs('#expense-totals').textContent='Fixed: ₱0.00 · Variable: ₱0.00 · Total: ₱0.00';const tbody=qs('#alloc-table tbody');tbody.innerHTML=''; if(expenseChart){expenseChart.destroy(); expenseChart=null}}})
 })
